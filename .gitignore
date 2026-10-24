@@ -1,6 +1,5 @@
-env.local.sh
-.env
+.local/
+.runtime/
 *.log
 .DS_Store
-runtime/
-evidence/private/
+private_seed/

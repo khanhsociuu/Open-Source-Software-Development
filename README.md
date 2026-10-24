@@ -1,135 +1,246 @@
-# Lab05 — PostgreSQL hoặc MySQL
+# DNU JUDGE — Đề tài 20 / Phát triển phần mềm mã nguồn mở / Lab 05
 
-Nhánh này chỉ chứa một bài lab. Dùng Ubuntu/WSL, PHP từ 8.1 và Git.
+**Đề tài:** Xây dựng hệ thống luyện tập và chấm bài lập trình trực tuyến.  
+**Phiên bản:** 2.0 — nguyên mẫu thực hành chạy **cục bộ** bằng PHP 8.1+, PostgreSQL 14+, Docker và WSL/Ubuntu.  
+**Tài liệu nền:** Lab 05 `HUONG_DAN (3).md`: cấu hình `db()`, `queryParams()`, `schema.sql`, mô-đun Repository/Stats, khóa `UNIQUE`, phân biệt trùng và lỗi CSDL, kiểm thử bền vững, `LEFT JOIN`.
 
-## Chọn hệ quản trị
+> Dự án này là **phần chuyển đổi nghiệp vụ từ CommunityPass sang Online Judge**, không phải mã của CommunityPass. Không ghi đè tệp nguồn Lab05 gốc vì chưa được cung cấp. Có thể để nguyên thư mục gốc, đặt dự án này cạnh `Lab05/Ma_nguon` hoặc trong một thư mục con độc lập. **Không chạy `schema.sql` vào CSDL của bài Lab 05 cũ.**
 
-Sinh viên chọn **một** trong hai lựa chọn. Cùng mục tiêu lưu/đọc đăng ký, chống trùng, bài tự làm thống kê và rubric 10 điểm; không cần hoàn thành cả hai.
+## CẬP NHẬT 2.0 — NÂNG CẤP KHÔNG MẤT DATABASE
 
-| Lựa chọn | Thư mục chạy lệnh | Hướng dẫn |
-| --- | --- | --- |
-| PostgreSQL | `Ma_nguon` | [Hướng dẫn PostgreSQL](HUONG_DAN.md), [bản Word PostgreSQL](Huong_dan.docx) |
-| MySQL >= 8.0.16 | `Ma_nguon_MySQL` | [Hướng dẫn MySQL](HUONG_DAN_MYSQL.md), [README mã MySQL](Ma_nguon_MySQL/README.md) |
+Đây là bản **thay thế mã nguồn**, không phải bản xuất database. Nếu bạn đã chạy bản 1.0 ở `C:\Users\ADMIN\Documents\Ma_Nguon_Mo\lab5`, hãy **giữ nguyên** `.local/db.json` và PostgreSQL `dnu_judge_lab5`. Sao lưu thư mục `lab5` trước khi ghi đè các tệp mã, sau đó sao chép các thư mục `src`, `public`, `tests`, `cli`, `database`, cùng `lab.sh` từ ZIP v2 vào **trực tiếp** thư mục `lab5`, không chép vào `lab5/Ma_nguon` (CommunityPass).
 
-Nếu chọn MySQL, clone nhánh `lab5` rồi vào `lab5/Ma_nguon_MySQL`. Cài `mysql-server mysql-client php-mysql`, tạo tài khoản/CSDL riêng theo hướng dẫn MySQL, sau đó chạy `bash lab.sh db-config`, `bash lab.sh check`, `bash lab.sh sql`. Trong MySQL client dùng `source database/schema.sql;` và `exit`; trở về Bash để chạy `bash lab.sh run`.
+- **Không chạy `seed` lần nữa** nếu đã có 10 bài/71 test; **không DROP database**. Phiên bản v2 không thay đổi cấu trúc bảng bắt buộc nên không cần migration/schema lại nếu database v1 đã chạy.
+- Đã thêm `public/dashboard.php` (tiến độ cá nhân/nhóm), trạng thái bài tập có phân loại, giao diện code 2 cột và tab stdin/kết quả, so sánh hai lần chấm mới nhất, thống kê giảng viên.
+- Code editor tích hợp **CodeMirror 5 được đóng gói cục bộ**; nếu JavaScript editor không tải được, có textarea dự phòng với Tab và Ctrl+Enter. Trình soạn mã không cần kết nối CDN; mã chấm vẫn chỉ chạy Docker worker.
+- `JudgeService::heartbeat()` gia hạn lease giữa các ca; worker cũ không tiếp tục chạy khi mất lease; API chấm lại giới hạn theo quyền quản lý đề.
+- Đừng sao chép `.local/` của gói sang máy vì mật khẩu là dữ liệu riêng; `.runtime/` cũng không cần sao chép. Không commit `private_seed/` lên repository công khai.
 
-Hai bản chạy độc lập, có `.local/db.json` riêng và dùng cùng cổng 8105. Dừng PHP trước khi đổi bản; không sao chép cấu hình/schema giữa hai hệ quản trị. Mã MySQL dùng MySQLi/mysqlnd; không cần cài PostgreSQL khi chọn MySQL. Bản MySQL có thêm bộ ràng buộc: `bash lab.sh test` cần lần lượt 6/6, 7/7 và 9/9. TODO thống kê vẫn để sinh viên hoàn thiện.
+### Các lệnh chạy bản 2.0 trên máy bạn
 
-**Các mục cài đặt/chạy bên dưới dành cho lựa chọn PostgreSQL.** Với MySQL, theo [hướng dẫn riêng](HUONG_DAN_MYSQL.md), nộp thư mục `Ma_nguon_MySQL` và ghi rõ hệ quản trị đã chọn.
+```bash
+cd /mnt/c/Users/ADMIN/Documents/Ma_Nguon_Mo/lab5
+docker info
+bash lab.sh check
+# Terminal A:
+bash lab.sh run
+# Terminal B (trong cùng thư mục):
+bash lab.sh worker
+# Terminal C, kiểm thử:
+php tests/unit.php
+bash lab.sh test
+bash lab.sh smoke  # Chạy thử Docker thật, không dùng PostgreSQL
+```
 
+**Docker Desktop** phải bật WSL Integration với Ubuntu. Tải image trước: `docker pull python:3.12-alpine` và `docker pull gcc:14`. Không mở cổng Docker trên web. `bash lab.sh test` cần PostgreSQL của bạn; môi trường đóng gói hiện tại không có PostgreSQL và Docker daemon, vì vậy không khẳng định đã chạy end-to-end tại đây.
 
-**Trước khi chạy:** làm mục Chuẩn bị riêng cho Lab 05 trong [HUONG_DAN.md](HUONG_DAN.md): cài PostgreSQL và PHP pgsql, tạo CSDL riêng, chạy bash lab.sh db-config rồi tạo schema.
+## 1. Các chức năng đã lập trình
 
-## Chuẩn bị trên Ubuntu/WSL
+| Yêu cầu Đề tài 20 | Các thành phần |
+| --- | --- |
+| 1. Quản lý bài/chủ đề/mức độ/phiên bản giới hạn chạy | `public/teacher.php`, `teacher_edit.php`, `suite.php`, `src/TeacherService.php`, `database/schema.sql` |
+| 2. Soạn mã, lưu bản nháp, chạy thử stdin → stdout/stderr | `public/problem.php`, `public/app.js`, `public/api.php`, bảng `drafts`, `trial_runs`, CLI worker |
+| 3. Nộp, hàng đợi, mỗi ca và tổng hợp | `submissions`, `judging_runs`, `case_results`, `src/JudgeService.php`, `src/Runner.php` |
+| 4. Tra cứu mã/lịch sử/tiến độ, phân quyền lớp | `public/history.php`, `submission.php`, `src/StudentStats.php`, `canViewSubmission()` |
+| 5. Tạo bộ test v2, chấm lại và giữ nguyên lịch sử v1 | `test_suite_versions`, `JudgeService::rejudge()`, `suite.php`, `submission.php` |
+| Quản trị thực thi và tài khoản | `public/admin.php` hiển thị hàng đợi, quản lý tài khoản/lớp; worker vận hành **chỉ qua CLI** |
+
+**Phiên bản:** `problems` 1–N `problem_versions`, `topics` 1–N `problems`, `levels` 1–N `problems`, `problem_versions` 1–N `test_suite_versions`, mỗi `test_suite_versions` 1–N `test_cases`; một `submissions` có nhiều `judging_runs`, mỗi lần chấm có nhiều `case_results`. Mỗi bản nộp lưu ID phiên bản đề, bộ test lúc nộp và ngôn ngữ. Khi chấm lại, phiên bản đề phải khớp với bộ chấm mới.
+
+## 2. Chuẩn bị trên Windows 11 / WSL Ubuntu
+
+Mở terminal **Ubuntu/WSL**, không chạy các lệnh Bash trong PowerShell. Đặt thư mục dự án vào WSL, ví dụ `~/DeTai20_Lab05_OnlineJudge`. Nếu đã cài PHP/PostgreSQL theo Lab 05, có thể bỏ qua phần cài trùng.
 
 ```bash
 sudo apt update
-sudo apt install php-cli git unzip
-php -v
-git --version
-```
-
-PHP cần từ 8.1 trở lên. Các lệnh bên dưới chạy trong Ubuntu/WSL. Khi tải nhiều bài, trở về thư mục cha chứa các thư mục lab trước mỗi lệnh clone; không clone bài tiếp theo bên trong `Ma_nguon` của bài trước.
-
-## Tải bài
-
-```bash
-git clone --single-branch --branch lab5 https://github.com/FIT-DNU/Open-Source-Software-Development.git lab5
-cd lab5/Ma_nguon
-```
-
-## Cấu hình PostgreSQL trước lần chạy đầu
-
-Tại `lab5/Ma_nguon`, cài và khởi động PostgreSQL:
-
-```bash
-sudo apt install postgresql postgresql-client php-pgsql
+sudo apt install -y php-cli php-pgsql postgresql postgresql-client git unzip python3 g++
 sudo service postgresql start
+php -v
+php -m | grep pgsql
+psql --version
 ```
 
-Làm mục **Chuẩn bị riêng cho Lab 05** trong [HUONG_DAN.md](HUONG_DAN.md) để tạo tài khoản và CSDL lab riêng, hoặc dùng thông tin giảng viên cấp. Không xóa CSDL đã tồn tại. Sau đó:
+Docker: khuyến nghị **Docker Desktop bật WSL Integration** cho Ubuntu, hoặc cài Docker Engine hợp lệ trong Ubuntu. Xác minh Docker daemon thực sự chạy:
 
 ```bash
-bash lab.sh db-config
-bash lab.sh check
-bash lab.sh sql
+docker version
+docker info
+docker pull python:3.12-alpine
+docker pull gcc:14
 ```
 
-Nhập thông tin kết nối theo lời nhắc. Trong cửa sổ PostgreSQL vừa mở:
+Nếu gặp `Cannot connect to Docker daemon`, xử lý Docker Desktop/WSL Integration hoặc Docker Engine, **không** chạy trực tiếp mã nộp bằng `shell_exec`/`python`/`g++` trong PHP Web để chữa tạm.
+
+### Tạo PostgreSQL riêng (chỉ 1 lần)
+
+```bash
+sudo -u postgres psql
+```
+
+Trong `psql`:
 
 ```sql
-\i database/schema.sql
-SELECT id, title FROM events ORDER BY id;
+CREATE ROLE dnu_judge LOGIN;
+\password dnu_judge
+CREATE DATABASE dnu_judge_lab5 OWNER dnu_judge;
 \q
 ```
 
-Cần có 3 sự kiện mẫu. Trở về Bash rồi làm mục Chạy bài bên dưới. Nếu khởi động lại WSL và PostgreSQL chưa chạy, dùng `sudo service postgresql start`.
+Tạo role/database **chỉ khi chưa tồn tại**. Nếu có rồi, giữ lại, không `DROP DATABASE` hoặc đổi mật khẩu bừa bãi. Có thể đổi tên role/database và dùng tên thực khi cấu hình.
 
-## Chạy bài
+Vào thư mục dự án và thiết lập kết nối:
 
 ```bash
+cd ~/DeTai20_Lab05_OnlineJudge
+bash lab.sh db-config
 bash lab.sh check
+bash lab.sh schema
+```
+
+`db-config` hỏi `host` (`127.0.0.1`), `port` (`5432`), `dbname` (`dnu_judge_lab5`), `user` (`dnu_judge`), `password` (mật khẩu đã tạo). Cấu hình vào `.local/db.json` và đã có `.gitignore`; **không đưa lên GitHub**. Ngoài ra `src/Database.php` hỗ trợ cấu hình qua `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`.
+
+### Nạp 10 bài và tài khoản mô phỏng
+
+Trong terminal WSL:
+
+```bash
+read -rsp 'Mật khẩu demo (>=10 ký tự): ' SEED_PASSWORD; echo
+export SEED_PASSWORD
+bash lab.sh seed
+unset SEED_PASSWORD
+```
+
+Các tên đăng nhập mẫu: **`student_a`**, **`student_b`**, **`lecturer`**, **`admin`**. Mật khẩu là chuỗi bạn vừa nhập (4 tài khoản demo chung mật khẩu **chỉ dùng trên máy cá nhân**, thay bằng mật khẩu khác nhau khi dùng thực tế). Seed có **10 bài tự biên soạn, 71 test case, 40 tệp mã mẫu (20 Python + 20 C++)**. Thư mục `private_seed/` chứa **đáp án và dữ liệu kín**, được Git bỏ qua; không công khai hay đưa vào thư mục `public/`. Nếu tạo kho Git để người học truy cập, giữ `private_seed/` ngoài kho hoặc trong gói riêng dành cho giảng viên.
+
+### Chạy ứng dụng — cần 2 terminal
+
+**Terminal 1 — Web:**
+
+```bash
+cd ~/DeTai20_Lab05_OnlineJudge
 bash lab.sh run
 ```
 
-Mở [danh sách sự kiện](http://127.0.0.1:8105/) hoặc [form đăng ký](http://127.0.0.1:8105/register.php). Giữ terminal mở; Ctrl+C để dừng.
+Mở **http://127.0.0.1:8105** trên Windows, đăng nhập `student_a` bằng mật khẩu demo.
 
-## Kiểm tra
-
-Mở terminal thứ hai tại Ma_nguon, hoặc dừng máy chủ trước:
+**Terminal 2 — worker cách ly:**
 
 ```bash
-bash lab.sh test
-bash lab.sh extend
+cd ~/DeTai20_Lab05_OnlineJudge
+bash lab.sh worker
 ```
 
-test kiểm tra phần mẫu; extend kiểm tra phần tự làm. Sinh viên cần hoàn thiện TODO; extend có thể chưa đạt ở bản khởi đầu.
+Worker phải duy trì hoạt động để nhận hàng đợi. Chạy một công việc rồi thoát: `bash lab.sh worker-once`. Dừng hai terminal bằng Ctrl+C. Web PHP **không** được cấp Docker socket; chỉ tiến trình CLI worker có quyền sử dụng Docker Engine.
 
-[Hướng dẫn đầy đủ](HUONG_DAN.md) · [Hướng dẫn mã nguồn](Ma_nguon/README.md)
+Kiểm tra dữ liệu thật bằng `bash lab.sh sql`:
 
-Không đưa .local, mật khẩu hoặc dữ liệu cá nhân thật vào bài nộp.
+```sql
+SELECT COUNT(*) FROM problems;
+SELECT COUNT(*) FROM test_cases;
+SELECT id, status, verdict, passed_count, total_count FROM judging_runs ORDER BY id DESC LIMIT 10;
+\q
+```
 
-## Các bài khác
+Với CSDL mới sau seed: 10 bài, 71 test case. Khởi động lại PHP Web không xóa được dữ liệu.
 
-[Lab01](https://github.com/FIT-DNU/Open-Source-Software-Development/tree/lab1) · [Lab02](https://github.com/FIT-DNU/Open-Source-Software-Development/tree/lab2) · [Lab03](https://github.com/FIT-DNU/Open-Source-Software-Development/tree/lab3) · [Lab04](https://github.com/FIT-DNU/Open-Source-Software-Development/tree/lab4) · [Lab05](https://github.com/FIT-DNU/Open-Source-Software-Development/tree/lab5)
+## 3. Thử các tình huống chính
 
-Kết quả yêu cầu của phần mẫu: `TESTS=6 FAILED=0 và TESTS=7 FAILED=0`. `check` chỉ kiểm tra môi trường. `extend` ở bản khởi đầu còn ca chưa đạt vì TODO; không sửa test để bỏ qua lỗi.
+### Người học
 
-## Nhập mật khẩu trong db-config
+1. Đăng nhập `student_a`, chọn **Tổng hai số nguyên**.
+2. Chọn Python, nhập `a,b=map(int,input().split());print(a+b)`.
+3. Nhập stdin `2 3`, nhấn **Chạy thử** → sau khi worker xử lý, xem stdout `5`.
+4. Nhấn **Lưu bản nháp** → nội dung được lưu trong PostgreSQL, không chỉ Session.
+5. Nhấn **Nộp bài** → hệ thống lưu một `submission` và tạo `judging_run` `queued`.
+6. Xem chi tiết/lịch sử: nếu đủ 7 ca đúng là `AC`.
+7. Thử `print(0)` để kiểm tra `WA`; thử mã lỗi cú pháp để kiểm tra `CE`, `1/0` để kiểm tra `RE`, `while True: pass` để kiểm tra `TLE` (với Docker đang chạy).
 
-Chạy `bash lab.sh db-config` trực tiếp trong terminal Ubuntu/WSL tương tác, tại `Ma_nguon`. Không dùng pipe hoặc chuyển hướng đầu vào cho lệnh này.
+**C++17:** chọn C++, dùng `private_seed/samples/tong_hai_so/correct.cpp` làm mã mẫu (chỉ cho giảng viên/kiểm thử). Worker biên dịch tệp nguồn trong container GCC và chạy chương trình trong container riêng.
 
-- Nhấn Enter để dùng máy chủ `127.0.0.1` và cổng `5432`, hoặc nhập giá trị được cấp.
-- Tên CSDL và tài khoản phải khớp tài khoản đã tạo; mặc định là `communitypass_lab_v5`.
-- Khi nhập mật khẩu, terminal **không hiện ký tự hoặc dấu sao**. Gõ mật khẩu rồi nhấn Enter; đây là hành vi bình thường.
-- Kết nối thành công mới có `CAU_HINH=DA_LUU`. Sau đó chạy `bash lab.sh check`, tạo schema theo hướng dẫn rồi chạy Web.
-- Sai mật khẩu: công cụ báo kết nối thất bại và không lưu cấu hình mới. Cấu hình đã lưu từ trước được giữ nguyên; chạy lại `db-config` để sửa thông tin.
-- Nếu báo `Mo terminal tuong tac de nhap mat khau`, mở terminal tương tác thực sự rồi chạy lại. Không đưa mật khẩu vào câu lệnh, ảnh chụp, Git hoặc bài nộp.
+### Giảng viên và quản trị viên
 
-Chỉ cần cấu hình lại khi thông tin kết nối thay đổi. Mỗi lần chạy `check` đạt không thay thế bước tạo schema ban đầu.
-## Tự kiểm tra luồng trên trình duyệt
+1. Đăng nhập `lecturer` → **Quản lý**. Tạo bài mới với chủ đề, mức độ, ràng buộc input/output, ví dụ, giới hạn chạy và **mảng JSON 5–50 ca**.
+2. Vào **Bộ test** của một bài, tạo bộ dữ liệu v2 từ JSON 5+ ca. Bộ v1 không bị cập nhật/xóa.
+3. Mở bài nộp đã có của người học trong lớp, nhấn **Chấm lại**, chọn v2 **phù hợp phiên bản đề**, xem cả lịch sử v1/v2.
+4. Dùng **Sửa đề** để tạo phiên bản đề mới; bộ test được sao chép thành phiên bản mới, bài nộp cũ tiếp tục giữ ID phiên bản cũ.
+5. Đăng nhập `admin` → **Hệ thống**, xem trạng thái hàng đợi, tạo người học/giảng viên/lớp và thêm thành viên; worker vẫn phải khởi động từ terminal.
 
-1. Mở `/register.php`, gửi form trống: thấy lỗi họ tên/email.
-2. Chọn sự kiện, nhập tên và email thử nghiệm, nhấn **Tiếp tục**: chuyển sang trang xác nhận.
-3. Chọn **Sửa lại**: sự kiện, tên và email của bản nháp vẫn còn. Thử sửa rồi tiếp tục.
-4. Chọn **Hủy bản nháp**: quay về form trống. Nhập lại thông tin và xác nhận để kiểm tra luồng hoàn tất.
-5. Tại form đăng ký, chọn **Đầy đủ**, nhấn **Lưu tùy chọn**: dòng `Tùy chọn Cookie` hiển thị `full`.
-6. Dùng một phiên trình duyệt riêng để mở `/confirm.php`: phiên mới chưa có bản nháp nên được chuyển về form nhập. Không dùng hai tab cùng phiên để kiểm tra cách ly Session.
+Ví dụ tạo 5 test case mới với JSON trong form (chỉ demo cho bài Tổng hai số):
 
-Khi so sánh Lab04 và Lab05 trên `127.0.0.1`, dùng hai phiên trình duyệt riêng: Cookie tùy chọn `view` dùng chung theo host, không tách theo cổng. Dữ liệu Session của từng lab dùng tên và thư mục riêng do `lab.sh` thiết lập.
-Hoàn tất lần đầu cần thấy `CREATED`. Nhập lại cùng sự kiện và email (kể cả đổi chữ hoa/thường): cần thấy `DUPLICATE`. Đổi sang một sự kiện khác là một đăng ký khác.
+```json
+[
+  {"input":"1 2\n","output":"3\n"},
+  {"input":"0 0\n","output":"0\n"},
+  {"input":"-1 2\n","output":"1\n"},
+  {"input":"100 5\n","output":"105\n"},
+  {"input":"-8 -2\n","output":"-10\n"}
+]
+```
 
-Đóng máy chủ bằng Ctrl+C rồi chạy lại `bash lab.sh run`: dữ liệu trong CSDL vẫn còn. Thử cùng cặp sự kiện–email vẫn trả `DUPLICATE`.
+## 4. Quy tắc chấm và tính đúng đắn
 
-Nếu mất kết nối khi xác nhận, ứng dụng trả lỗi 503 và thông báo giữ bản nháp. Khôi phục kết nối, chọn **Quay lại xác nhận** rồi thử lại; không coi lỗi kết nối là `DUPLICATE`. Danh sách sự kiện vẫn hiển thị số chỗ mẫu; không dùng số đó để kết luận số đăng ký thực trong CSDL. Thống kê mở rộng vẫn là TODO.
+* `AC`: stdout đúng với expected stdout theo quy tắc: chuẩn hóa CRLF/CR → LF, bỏ khoảng trắng **cuối chuỗi** bằng `rtrim`; không bỏ khoảng trắng bên trong dòng.
+* `WA`: chương trình chạy được nhưng đầu ra không khớp.
+* `CE`: lỗi biên dịch C++, lỗi cú pháp Python; C++ hết thời gian biên dịch cũng báo CE trong nguyên mẫu.
+* `RE`: thoát với mã khác 0 hoặc lỗi khi chạy.
+* `TLE`: vượt giới hạn thời gian tính theo đồng hồ (có khoảng đệm khởi động container).
+* `SYSTEM_ERROR`: lỗi Docker/dịch vụ worker/dữ liệu hệ thống; **không được quy thành WA**. Trạng thái `system_error` có thể chấm lại sau khi sửa môi trường.
 
+Worker thực thi tệp đơn, stdin/stdout, chạy trong container `--network none`, `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, `--pids-limit`, giới hạn memory, CPU, thời gian; **trình duyệt không gọi Docker**. Output và stderr chạy thử bị cắt giới hạn; với chấm kín, hệ thống chỉ lưu verdict và thời gian từng test, **không lưu/trả stdout, input hoặc expected output của từng ca trong `case_results`**. Giao diện/API không đọc test ẩn. Có thể suy luận thông tin về dữ liệu qua phản hồi AC/WA nếu nộp nhiều lần; nguyên mẫu giới hạn yêu cầu nhưng **không bảo đảm chống mọi kênh suy luận**.
 
-## Giao diện Material 3 và khu thử riêng
+Chống trùng dùng `UNIQUE(user_id,idempotency_key)` ở PostgreSQL và `INSERT .. ON CONFLICT ... DO NOTHING`. Gửi lại **cùng key và cùng payload** → cùng `submission_id`; gửi key mới → bài mới; cùng key mà đổi payload → từ chối. Phân quyền mã nguồn dựa trên chủ sở hữu, giảng viên có lớp chứa người nộp hoặc admin. Form POST sử dụng CSRF token, SQL dùng `pg_query_params`.
 
-Sau `bash lab.sh run`, mở [sự kiện mẫu](http://127.0.0.1:8105/ui-demo.php) hoặc [thử vé/ghế](http://127.0.0.1:8105/ticket-preview.php?id=demo-open-source). Sáu sự kiện hư cấu và ảnh SVG cục bộ có giấy phép CC0. Không cần cài thêm thư viện hoặc build.
+Khi chấm lại: tạo hàng `judging_runs` mới, cập nhật `submissions.latest_run_id` **lúc enqueue**; worker chỉ kết thúc hàng run của nó nếu lease token còn hợp lệ. Kết quả run cũ đến muộn không thay `latest_run_id` và không ghi đè case/results của run mới. `FOR UPDATE SKIP LOCKED` cho phép chạy nhiều worker; lease token hỗ trợ thu hồi tác vụ bị gián đoạn. Các tác vụ mất lease tối đa 5 lần chuyển `SYSTEM_ERROR`.
 
-Chi tiết sự kiện lab tại `/event.php?id=1` chỉ đọc; nút mở biểu mẫu vẫn dùng chức năng gốc. Lựa chọn demo chỉ ở bộ nhớ trang, tải lại sẽ xóa; chưa giữ ghế, tạo vé hoặc thanh toán. ID demo không đi vào Form/CSDL. TODO và các ca `extend` sinh viên vẫn giữ nguyên.
+## 5. Kiểm thử theo rubric / đề tài
 
-Xem [hướng dẫn phần trình bày](Ma_nguon/README.md#giao-diện-material-3).
+```bash
+php tests/unit.php                  # 22 kiểm thử logic không cần DB
+python3 tests/samples.py           # 81 kiểm thử fixture Python đúng/sai
+python3 tests/samples.py --cpp     # thêm biên dịch và thử mẫu C++ nếu có g++
+bash lab.sh test                    # UNIT + INTEGRATION PostgreSQL
+bash lab.sh extend                  # kiểm thử mở rộng (cùng bộ test đầy đủ)
+```
 
-Kiểm tra dữ liệu UI riêng (không thay test gốc, không cần CSDL): tại `Ma_nguon`, chạy `php tests/ui-demo.php`.
+Nếu `INTEGRATION: NOT_RUN`, nguyên nhân là thiếu `php-pgsql`, cấu hình hoặc PostgreSQL. **NOT_RUN không phải PASS**. Môi trường tạo gói tại đây kiểm tra được cú pháp PHP, unit và fixture Python, nhưng **không có PostgreSQL/pgsql hoặc Docker daemon**, vì thế chưa chạy được các bài test tích hợp/dịch vụ chấm thật. Cần chạy lại trên Ubuntu/WSL của bạn để xác nhận cuối cùng.
+
+**Ma trận kiểm thử bắt buộc**:
+
+| Tình huống | Kết quả cần đối chiếu |
+|---|---|
+| Đúng / sai dữ liệu biên / lỗi cú pháp / lỗi runtime / vô hạn | `AC`, `WA`, `CE`, `RE`, `TLE` tương ứng |
+| Ngắt Docker/worker khi xử lý | `SYSTEM_ERROR`, hoặc công việc đang chờ thuê lại; **không `WA`** |
+| Gửi HTTP lại cùng `request_key` | Cùng `submission_id`, chỉ 1 row; gửi UUID mới tạo row mới |
+| Run v1 hoàn thành sau khi tạo run v2 | v1 vẫn nằm trong lịch sử; `latest_run_id` trỏ v2 |
+| Student A mở `/submission.php?id=<của B>` hoặc `api.php?action=submission-status` | HTTP 403; không thấy mã của B |
+| Bất kỳ giao diện/API nào | Không nhận test ẩn/expected output, lease token, mật khẩu DB, Docker endpoint |
+| Lớp chưa có lượt nộp | `StudentStats` bằng `LEFT JOIN` vẫn đếm `submissions=0` |
+
+## 6. Cấu trúc dự án
+
+```text
+DeTai20_Lab05_OnlineJudge/
+├── lab.sh
+├── database/schema.sql
+├── .gitignore
+├── .local/db.json              # TỰ TẠO, không công khai
+├── .runtime/                  # TẠM thời của worker, không công khai
+├── private_seed/              # DỮ LIỆU KÍN, không commit Git
+│   ├── seed.json              # 10 bài, 71 test case
+│   └── samples/<slug>/        # 10 × correct/wrong × Python/C++
+├── cli/{config,psql,seed,worker}.php
+├── src/{Database,Policy,JudgeService,TrialService,Runner,StudentStats,TeacherService,Web}.php
+├── public/{router,index,login,logout,problem,history,submission,api,teacher,teacher_edit,suite,admin}.php
+├── public/{app.js,style.css}
+└── tests/{unit,integration}.php, tests/samples.py
+```
+
+## 7. Giới hạn và bảo mật
+
+Dự án này phục vụ **học phần, chạy cục bộ**; không nên mở ra Internet hoặc chấm mã từ người lạ khi chưa được rà soát chuyên sâu. Dù Docker giảm rủi ro, không có sandbox phổ thông nào bảo đảm cách ly hoàn toàn khi chạy mã tùy ý. Để triển khai công khai cần worker trên máy riêng/hạ tầng cách ly mạnh hơn (rootless Docker/gVisor hoặc tương đương), giới hạn lưu lượng và tài nguyên theo người dùng, TLS, giám sát, backup, quản lý secrets, phân quyền DB theo vai trò, chống suy luận test kín, chống spam và nâng cấp cơ chế cấp phát tài nguyên. Không cấp quyền Docker cho user chạy PHP Web. Các Docker image trong ví dụ cần kéo trước; không dùng mẫu `private_seed` làm dữ liệu công khai.
+
+Mốc thời gian trong kết quả là thời gian thực thi container (wall time, có ảnh hưởng khởi động), chưa phải phép đo CPU chuẩn hóa giữa mọi hệ thống. Hệ thống kiểm tra theo tập ca thử, **không bảo đảm đúng trong mọi đầu vào**.
+
+---
+
+**Nộp bài:** lưu README + mã PHP/SQL + nhật ký `bash lab.sh check`, `bash lab.sh test`, `bash lab.sh extend`, ảnh hai luồng sử dụng và bài kiểm thử. Nếu chia repo cho học viên, không đưa `private_seed/`, `.local/`, `.runtime/`, mật khẩu/đáp án riêng lên GitHub; giáo viên kiểm tra seed từ gói riêng khi cần. Không được sửa test để tự nhận PASS.

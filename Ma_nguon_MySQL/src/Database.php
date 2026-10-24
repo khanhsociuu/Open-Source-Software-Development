@@ -1,54 +1,34 @@
 <?php
 declare(strict_types=1);
-function mysqlConfig(): array
-{
-    $path = __DIR__ . '/../.local/db.json';
-    if (!is_file($path)) {
-        throw new RuntimeException('DATABASE_CONFIG_MISSING');
-    }
-    $config = json_decode((string)file_get_contents($path), true);
-    foreach (['host', 'port', 'database', 'user', 'password'] as $key) {
-        if (!is_array($config) || !isset($config[$key]) || !is_string($config[$key])) {
-            throw new RuntimeException('DATABASE_CONFIG_INVALID');
+function db(): PgSql\Connection {
+    if (!extension_loaded('pgsql')) throw new RuntimeException('PGSQL_EXTENSION_MISSING');
+    $configFile = dirname(__DIR__) . '/.local/db.json';
+    if (is_file($configFile)) {
+        $cfg = json_decode((string)file_get_contents($configFile), true, 512, JSON_THROW_ON_ERROR);
+        foreach (['PGHOST'=>'host','PGPORT'=>'port','PGDATABASE'=>'dbname','PGUSER'=>'user','PGPASSWORD'=>'password'] as $key=>$prop) {
+            if (!getenv($key) && isset($cfg[$prop])) putenv($key.'='.$cfg[$prop]);
         }
     }
-    if (!ctype_digit($config['port']) || (int)$config['port'] < 1 || (int)$config['port'] > 65535) {
-        throw new RuntimeException('DATABASE_CONFIG_INVALID');
+    foreach (['PGHOST','PGDATABASE','PGUSER'] as $k) {
+        if (!getenv($k)) throw new RuntimeException('DATABASE_CONFIG_MISSING');
     }
-    return $config;
+    $c = @pg_connect('connect_timeout=3');
+    if ($c === false) throw new RuntimeException('DATABASE_UNAVAILABLE');
+    return $c;
 }
-function connectMysql(array $config): mysqli
-{
-    if (!extension_loaded('mysqli')) {
-        throw new RuntimeException('MYSQLI_EXTENSION_MISSING');
-    }
-    mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-    try {
-        $connection = mysqli_init();
-        $connection->options(MYSQLI_OPT_CONNECT_TIMEOUT, 3);
-        $connection->real_connect($config['host'], $config['user'], $config['password'],
-            $config['database'], (int)$config['port']);
-        $connection->set_charset('utf8mb4');
-        // Use UTC for comparable timestamps; strict mode prevents silent truncation.
-        $connection->query("SET time_zone = '+00:00'");
-        $connection->query("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION,ONLY_FULL_GROUP_BY'");
-        return $connection;
-    } catch (mysqli_sql_exception $e) {
-        throw new RuntimeException('DATABASE_UNAVAILABLE');
-    }
+function queryParams(PgSql\Connection $c, string $sql, array $params=[]): PgSql\Result {
+    $r = @pg_query_params($c,$sql,$params);
+    if ($r === false) throw new RuntimeException('DATABASE_OPERATION_FAILED');
+    return $r;
 }
-function db(): mysqli
-{
-    return connectMysql(mysqlConfig());
+function rows(PgSql\Connection $c,string $sql,array $params=[]): array {
+    return pg_fetch_all(queryParams($c,$sql,$params)) ?: [];
 }
-function queryParams(mysqli $connection, string $sql, array $params): mysqli_stmt
-{
-    try {
-        $statement = $connection->prepare($sql);
-        // PHP 8.1 supports execute(array); each ? receives a separate value.
-        $statement->execute($params);
-        return $statement;
-    } catch (mysqli_sql_exception $e) {
-        throw new RuntimeException('DATABASE_OPERATION_FAILED', (int)$e->getCode());
-    }
+function one(PgSql\Connection $c,string $sql,array $params=[]): ?array {
+    $r = rows($c,$sql,$params); return $r[0]??null;
+}
+function tx(PgSql\Connection $c,callable $task): mixed {
+    queryParams($c,'BEGIN');
+    try { $value=$task(); queryParams($c,'COMMIT'); return $value; }
+    catch(Throwable $e) { @pg_query($c,'ROLLBACK'); throw $e; }
 }
